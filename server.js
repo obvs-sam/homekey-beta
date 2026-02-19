@@ -9,6 +9,7 @@ app.use(express.static(__dirname));
 
 // ── CONFIG ──────────────────────────────────────────────
 const PROJECT_ID   = process.env.FIREBASE_PROJECT_ID   || 'codebysam123';
+const APP_ID       = process.env.FIREBASE_APP_ID       || 'android:com.emitrackon.emiuser4';
 const GROUP_ALIAS  = process.env.FIREBASE_GROUP_ALIAS  || 'home';
 const MAX_TESTERS  = parseInt(process.env.MAX_TESTERS  || '199');
 const DAILY_DELETE = parseInt(process.env.DAILY_DELETE || '100');
@@ -52,24 +53,56 @@ async function getAccessToken() {
 
 async function addTesterToFirebase(email) {
   const token = await getAccessToken();
-  const url   = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/groups/${GROUP_ALIAS}:batchJoin`;
-  const res   = await fetch(url, {
-    method:  'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ emails: [email], createMissingTesters: true }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-}
 
-async function removeTesterFromFirebase(email) {
-  const token = await getAccessToken();
-  const url   = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/groups/${GROUP_ALIAS}:batchLeave`;
-  const res   = await fetch(url, {
+  // Step 1: Tester ko project mein add karo
+  const addUrl = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/testers:batchAdd`;
+  const addRes = await fetch(addUrl, {
     method:  'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     body:    JSON.stringify({ emails: [email] }),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!addRes.ok) {
+    const err = await addRes.text();
+    console.error('batchAdd error:', err);
+    throw new Error(err);
+  }
+
+  // Step 2: Group mein add karo
+  const groupUrl = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/groups/${GROUP_ALIAS}:batchJoin`;
+  const groupRes = await fetch(groupUrl, {
+    method:  'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ emails: [email] }),
+  });
+  if (!groupRes.ok) {
+    const err = await groupRes.text();
+    console.error('batchJoin error:', err);
+    // Group join fail hone pe bhi tester add ho gaya — ignore karo
+  }
+}
+
+async function removeTesterFromFirebase(email) {
+  const token = await getAccessToken();
+
+  // Group se hataao
+  const leaveUrl = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/groups/${GROUP_ALIAS}:batchLeave`;
+  await fetch(leaveUrl, {
+    method:  'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ emails: [email] }),
+  });
+
+  // Project se bhi remove karo
+  const removeUrl = `https://firebaseappdistribution.googleapis.com/v1/projects/${PROJECT_ID}/testers:batchDelete`;
+  const res = await fetch(removeUrl, {
+    method:  'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ emails: [email] }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('batchDelete error:', err);
+  }
 }
 
 // ── DAILY CLEANUP ────────────────────────────────────────
