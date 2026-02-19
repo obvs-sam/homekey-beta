@@ -1,0 +1,4 @@
+node_modules/
+testers_data.json
+.env
+*.log
